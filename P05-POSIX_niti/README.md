@@ -1,73 +1,73 @@
-# P04 — Procesi i niti
+# P05 — POSIX niti (Pthreads)
 
-Ovo je uvodno poglavlje cjeline o **arhitekturama s dijeljenom memorijom**. Prije nego u sljedećem poglavlju zađemo u pthreads API, ovdje postavljamo temelje: po čemu se nit razlikuje od procesa, zašto je dijeljena memorija istovremeno najveća prednost i najveća opasnost niti, te koji se tipični obrasci organizacije niti iznova pojavljuju u praksi.
+Ovo je prvo poglavlje u kojem pišemo stvarni paralelni kod za **arhitekturu s dijeljenom memorijom**. U takvom modelu sve dretve izvršavanja vide isti adresni prostor, pa međusobno komuniciraju jednostavno — čitanjem i pisanjem zajedničkih varijabli, bez razmjene poruka. POSIX niti (*Pthreads*) najniži su, **eksplicitni** model takvog paralelizma: programer ručno stvara niti, dijeli posao među njima i sam štiti pristup zajedničkim podacima. U sljedećem poglavlju ista se hardverska arhitektura programira na višoj razini apstrakcije (OpenMP), a tek u Dijelu III prelazimo na distribuiranu memoriju (MPI), gdje dijeljenog adresnog prostora više nema.
 
-## Proces vs. nit
+Nit (engl. *thread*) je neovisni tok izvršavanja unutar procesa. Proces može imati više niti koje se izvršavaju istovremeno (na više jezgri) ili u dijeljenom vremenu. Stvaranje niti i prebacivanje konteksta jeftiniji su nego kod procesa jer se ne kopira cijeli adresni prostor.
 
-Proces je izvršna jedinica s **vlastitim, izoliranim** adresnim prostorom. Dva procesa ne dijele varijable; da bi razmijenili podatke, moraju koristiti mehanizme međuprocesne komunikacije (IPC), što je sporo i zahtjevno. Nit je lakša izvršna jedinica **unutar** procesa: niti istog procesa dijele adresni prostor, pa komuniciraju izravno preko zajedničkih varijabli.
+## Što niti dijele, a što je privatno
 
-| | Proces | Nit |
-|---|---|---|
-| Adresni prostor | zaseban | dijeljen |
-| Komunikacija | IPC (sporo) | zajedničke varijable (brzo) |
-| Stvaranje / prebacivanje konteksta | skupo | jeftino |
-| Izolacija | visoka (sigurnije) | niska (treba sinkronizacija) |
-| Privatno svakoj jedinici | sve | samo stog i registri |
+Sve niti istog procesa **dijele**: tekstni segment (kod), globalne varijable i dinamički alociranu memoriju (hrpu). **Privatno** za svaku nit jest: vlastiti stog (a time i lokalne varijable i parametri funkcija) te registri i programsko brojilo.
 
-Primjer `proces_vs_nit.c` to pokazuje izravno: promjena globalne varijable u procesu-djetetu (stvorenom s `fork()`) ne vidi se u roditelju, dok se promjena u niti odmah vidi u glavnoj niti.
+Ta podjela je temelj cijelog poglavlja. Lokalna varijabla u funkciji niti automatski je sigurna — svaka nit ima svoju kopiju na vlastitom stogu. Globalna varijabla ili podatak na hrpi zajednički je svima, pa istovremeni pristup treba uskladiti. Primjer `dijeljena_memorija.c` izravno pokazuje dijeljeni adresni prostor: glavna i radna nit vide i mijenjaju **istu** globalnu varijablu, bez ikakvog mehanizma za prijenos podataka.
 
-## Race condition — središnja opasnost dijeljene memorije
+## Prevođenje
 
-Kad više niti istovremeno mijenja isti podatak, konačni rezultat ovisi o nepredvidivom redoslijedu pristupa. Uzrok je što ni naizgled jednostavne operacije poput `brojac++` nisu **atomske** — prevode se u slijed *učitaj → uvećaj → spremi*, a raspoređivač operacijskog sustava može prekinuti nit između bilo koje dvije strojne instrukcije. Ako dvije niti pročitaju istu početnu vrijednost prije nego je ijedna spremi, jedno se uvećanje izgubi.
+Program uključuje zaglavlje `<pthread.h>` i prevodi se uz zastavicu `-pthread` (postavlja i potrebne makroe i povezuje s bibliotekom):
 
-Atomska operacija je ona koja se izvrši kao nedjeljiva cjelina — ili u potpunosti, ili nikako, bez mogućnosti prekida na pola. Budući da uvećanje brojača to nije, pristup dijeljenim podacima treba zaštititi sinkronizacijskim mehanizmom. Najčešći je **mutex** (engl. *mutual exclusion*): nit zaključa mutex prije ulaska u kritičnu sekciju (dio koda koji dira dijeljeni podatak) i otključa ga na izlazu, čime se osigurava da je u kritičnoj sekciji u svakom trenutku najviše jedna nit. Konkretni, prevodljivi primjeri utrke i njezina rješenja mutexom nalaze se u sljedećem poglavlju (`P05`).
+```sh
+gcc -pthread program.c -o program
+```
 
-## Deadlock
+## Ključne funkcije
 
-Sinkronizacija rješava utrku, ali uvodi novu opasnost. **Deadlock** (zaglavljenje) nastaje kad niti kružno čekaju jedna drugu: nit A drži ključ 1 i čeka ključ 2, dok nit B drži ključ 2 i čeka ključ 1 — nijedna ne može nastaviti. Najjednostavnije i najučinkovitije pravilo za izbjegavanje je **dosljedan redoslijed zaključavanja**: ako sve niti uvijek zaključavaju mutexe istim redoslijedom, kružno čekanje je nemoguće.
+| Funkcija | Uloga |
+|---|---|
+| `pthread_create(&nit, NULL, funkcija, arg)` | stvara novu nit koja izvršava `funkcija(arg)` |
+| `pthread_join(nit, &rezultat)` | blokira pozivatelja dok `nit` ne završi i preuzima njezin povratni pokazivač |
+| `pthread_exit(rezultat)` | terminira trenutnu nit (može se pozvati bilo gdje) |
+| `pthread_self()` | vraća identifikator trenutne niti |
+| `pthread_mutex_lock` / `unlock` | ulaz/izlaz iz kritične sekcije |
 
-- `deadlock.c` — namjerno zaglavljenje (suprotan redoslijed zaključavanja).
-- `deadlock_ispravak.c` — ispravak dosljednim redoslijedom.
-
-## Dizajn obrasci višenitnih programa
-
-Iako je svaki paralelni problem drukčiji, organizacija niti gotovo se uvijek svodi na nekoliko provjerenih obrazaca.
-
-**Upravitelj/radnik (master/slave).** Jedna nit (upravitelj) dijeli posao radnim nitima i prikuplja njihove rezultate. Centralizirana kontrola olakšava balansiranje opterećenja, ali upravitelj može postati usko grlo. Primjer: `master_radnik.c`.
-
-**Radna ekipa (workcrew).** Posao je unaprijed poznat i statički se ravnomjerno podijeli među niti, bez upravitelja. Prikladno za dobro definirane, jednolike probleme (matrične operacije, pretraživanja). Primjer: `mnozenje_matrica.c`, gdje svaka nit računa svoj pojas redaka umnoška matrica.
-
-**Proizvođač/potrošač (producer/consumer).** Niti dijele omeđeni spremnik (red): proizvođači dodaju stavke, potrošači ih uzimaju, radeći različitim brzinama. Spremnik ih razdvaja (*decoupling*) i apsorbira nagle navale posla. Za usklađivanje (čekanje kad je spremnik pun, odnosno prazan) koriste se **uvjetne (kondicijske) varijable**: `pthread_cond_wait` uspava nit i privremeno otpusti mutex, a `pthread_cond_signal` budi nit kad uvjet postane istinit. Primjer: `proizvodjac_potrosac.c`.
-
-**Cjevovod (pipeline).** Obrada se dijeli na faze; svaka faza je nit, a faze su povezane redovima. Dok kasnija faza obrađuje jedan podatak, ranija već priprema sljedeći, pa se rad faza preklapa. Propusnost je visoka ako su faze dobro balansirane — najsporija faza ograničava cijeli cjevovod. Primjer: `pipeline.c` (generiranje → kvadriranje → zbrajanje).
+Funkcija koju nit izvršava uvijek ima potpis `void *funkcija(void *arg)` — prima i vraća generički pokazivač. Argument se niti uvijek prosljeđuje kao adresa (`void *`), a unutar niti se pretvara natrag u stvarni tip.
 
 ## Primjeri u ovom poglavlju
 
-| Datoteka | Obrazac / koncept |
-|---|---|
-| `proces_vs_nit.c` | izolirana memorija procesa vs. dijeljena memorija niti |
-| `deadlock.c` | kružno čekanje (namjerno zaglavljenje) |
-| `deadlock_ispravak.c` | izbjegavanje deadlocka dosljednim redoslijedom zaključavanja |
-| `master_radnik.c` | upravitelj/radnik |
-| `mnozenje_matrica.c` | radna ekipa (workcrew) |
-| `proizvodjac_potrosac.c` | proizvođač/potrošač s uvjetnim varijablama |
-| `pipeline.c` | cjevovod u tri faze |
+### Osnovni rad s nitima
+
+- **`pozdrav_nit.c`** — najjednostavnija nit: glavna nit stvori radnu nit i pričeka je pozivom `pthread_join`.
+- **`dijeljena_memorija.c`** — dijeljeni adresni prostor: glavna i radna nit vide i mijenjaju istu globalnu varijablu. Ilustrira zašto je komunikacija među nitima trivijalna, ali i zašto je opasna bez sinkronizacije.
+- **`argument_int.c`** — prosljeđivanje cjelobrojnog argumenta slanjem adrese varijable i pretvorbom `void *` → `int *`.
+- **`argument_struktura.c`** — prosljeđivanje više podataka odjednom preko strukture.
+
+### Tipične greške i ispravci
+
+- **`greska_petlja.c`** — česta greška: svim nitima se prosljeđuje adresa **iste** varijable petlje, pa je ispis nedeterminiran.
+- **`ispravak_polje.c`** — ispravak: svaka nit dobiva pokazivač na vlastiti element polja.
+- **`rezultat_malloc.c`** — ispravan način vraćanja rezultata: rezultat se alocira na **hrpi** (ne na privatnom stogu niti, koji nestaje po završetku) i oslobađa nakon `pthread_join`.
+
+### Race condition i mutex
+
+Race condition (utrka) središnja je opasnost paralelizma s dijeljenom memorijom: kad više niti istovremeno mijenja isti podatak, konačni rezultat ovisi o nepredvidivom redoslijedu pristupa. Uzrok je što ni naizgled jednostavne operacije poput `brojac++` nisu atomske — prevode se u slijed učitaj–uvećaj–spremi, a raspoređivač može prekinuti nit između bilo koje dvije strojne instrukcije.
+
+- **`utrka.c`** — četiri niti uvećavaju zajednički brojač bez zaštite; uvećanja se gube i rezultat je manji od očekivanog te različit pri svakom pokretanju.
+- **`mutex.c`** — rješenje: pristup brojaču štiti se mutexom, pa je samo jedna nit u kritičnoj sekciji i rezultat je uvijek točan.
+- **`suma_niti.c`** — paralelno zbrajanje polja s **lokalnom akumulacijom**: svaka nit zbraja svoj dio u privatnu varijablu (bez zaključavanja), a mutex koristi samo jednom, za pribrajanje lokalnog zbroja globalnom. Time se izbjegavaju milijuni nepotrebnih zaključavanja — tipičan obrazac za dobre performanse.
 
 ## Prevođenje i pokretanje
 
 ```sh
 make all              # prevede sve primjere
-make <ime_primjera>   # prevede pojedinačni primjer
+make <ime_primjera>   # prevede pojedinačni primjer, npr. make mutex
 make clean            # briše izvršne i objektne datoteke
 ```
 
+Pokretanje:
+
 ```sh
-./proces_vs_nit
-./deadlock_ispravak
-./master_radnik
-./mnozenje_matrica
-./proizvodjac_potrosac
-./pipeline
+./pozdrav_nit
+./dijeljena_memorija
+./utrka               # pokrenite više puta — rezultat varira i < 4000000
+./mutex               # uvijek točno 4000000
 ```
 
-> **Napomena o `deadlock.c`:** to je namjerno neispravan program koji se **neće zaustaviti**. Prekinite ga s `Ctrl-C` ili pokrenite uz ograničenje vremena: `timeout 3 ./deadlock`.
+> **Napomena o `utrka.c`:** to je namjerno neispravan program koji ilustrira problem. Točan rezultat daju `mutex.c` i `suma_niti.c`.
