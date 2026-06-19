@@ -1,59 +1,55 @@
-# P05 — POSIX niti (Pthreads)
+# Paralelno programiranje
 
-Nit (engl. *thread*) je neovisni tok izvršavanja unutar procesa. Sve niti istog procesa dijele isti memorijski prostor — tekstni segment (kod), globalne varijable i hrpu (heap) — dok svaka nit ima vlastiti stog, registre i raspored izvršavanja. Upravo zbog dijeljene memorije niti komuniciraju brzo (bez IPC mehanizama), ali pristup zajedničkim podacima treba **eksplicitno sinkronizirati**.
+Skripta je prvenstveno namijenjena studentima koji slušaju kolegij *Paralelno programiranje* na Fakultetu elektrotehnike, strojarstva i brodogradnje Sveučilišta u Splitu (FESB). Sadrži primjere koda u jeziku C, organizirane po poglavljima, uz objašnjenja ključnih koncepata paralelnog programiranja — od teorijskih osnova do programiranja s nitima, OpenMP-om, MPI-jem i na grafičkim procesorima.
 
-POSIX niti (*Pthreads*) su standardizirani API (IEEE 1003.1c, 1995.) dostupan na Linuxu, macOS-u i BSD sustavima. Program uključuje zaglavlje `<pthread.h>`, a prevodi se uz zastavicu `-pthread`:
+Gradivo je podijeljeno u četiri cjeline.
 
-```sh
-gcc -pthread program.c -o program
-```
+## Dio I — Uvod i teorijska razmatranja
 
-## Ključne funkcije
-
-| Funkcija | Uloga |
+| Direktorij | Sadržaj |
 |---|---|
-| `pthread_create(&nit, NULL, funkcija, arg)` | stvara novu nit koja izvršava `funkcija(arg)` |
-| `pthread_join(nit, &rezultat)` | blokira pozivatelja dok `nit` ne završi i preuzima njezin povratni pokazivač |
-| `pthread_exit(rezultat)` | terminira trenutnu nit (može se pozvati bilo gdje) |
-| `pthread_self()` | vraća identifikator trenutne niti |
-| `pthread_mutex_lock` / `unlock` | ulaz/izlaz iz kritične sekcije |
+| `P01-Uvod/` | motivacija za paralelizam, serijsko vs. paralelno računanje |
+| `P02-Arhitekture/` | Flynnova taksonomija (SISD/SIMD/MISD/MIMD), memorijski modeli, SIMD/SIMT |
+| `P03-Osnove_paralelizacije/` | dekompozicija, ovisnosti podataka (RAW/WAR/WAW/RAR), `restrict`, Amdahlov i Gustafson-Barsisov zakon |
 
-Funkcija koju nit izvršava uvijek ima potpis `void *funkcija(void *arg)` — prima i vraća generički pokazivač.
+## Dio II — Arhitekture s dijeljenom memorijom
 
-## Primjeri u ovom poglavlju
+| Direktorij | Sadržaj |
+|---|---|
+| `P04-Procesi_i_niti/` | proces vs. nit, race condition, atomske operacije, mutex, deadlock, dizajn obrasci |
+| `P05-POSIX_niti/` | Pthreads API, prosljeđivanje argumenata, vraćanje rezultata, kritične sekcije |
+| `P06-OpenMP/` | fork-join model, `#pragma omp parallel`, work-sharing, reduction, sinkronizacija |
 
-### Osnovni rad s nitima
+## Dio III — Arhitekture s distribuiranom memorijom
 
-- **`pozdrav_nit.c`** — najjednostavnija nit: glavna nit stvori radnu nit i pričeka je pozivom `pthread_join`.
-- **`argument_int.c`** — prosljeđivanje cjelobrojnog argumenta niti slanjem **adrese** varijable i pretvorbom `void *` → `int *`.
-- **`argument_struktura.c`** — prosljeđivanje više podataka odjednom preko strukture.
+| Direktorij | Sadržaj |
+|---|---|
+| `P07-MPI/` | komunikatori i rang, point-to-point (blokirajuća/neblokirajuća), kolektivne operacije |
 
-### Tipične greške i ispravci
+## Dio IV — GPU arhitekture
 
-- **`greska_petlja.c`** — česta greška: svim nitima se prosljeđuje adresa **iste** varijable petlje, pa je ispis nedeterminiran.
-- **`ispravak_polje.c`** — ispravak: svaka nit dobiva pokazivač na vlastiti element polja.
-- **`rezultat_malloc.c`** — ispravan način vraćanja rezultata iz niti: rezultat se alocira na **hrpi** (ne na stogu niti, koji nestaje po završetku) i oslobađa nakon `pthread_join`.
+| Direktorij | Sadržaj |
+|---|---|
+| `P08-GPU/` | CUDA programski model (kerneli, niti i blokovi, memorija), uz usporedni osvrt na OpenCL |
 
-### Race condition i mutex
+## Preduvjeti
 
-- **`utrka.c`** — demonstracija utrke: četiri niti uvećavaju zajednički brojač bez zaštite. Budući da `brojac++` nije atomska operacija (učitaj–uvećaj–spremi), uvećanja se gube i rezultat je manji od očekivanog te različit pri svakom pokretanju.
-- **`mutex.c`** — rješenje: pristup brojaču štiti se mutexom, pa je rezultat uvijek točan.
-- **`suma_niti.c`** — paralelno zbrajanje polja s **lokalnom akumulacijom**: svaka nit zbraja svoj dio bez zaključavanja, a mutex koristi samo jednom (za pribrajanje lokalnog zbroja globalnom). Time se izbjegavaju milijuni nepotrebnih zaključavanja.
+- POSIX-kompatibilan sustav (Linux, macOS, WSL, BSD)
+- `gcc` (s podrškom za `-pthread` i `-fopenmp`) i `make`
+- za Dio III: MPI implementacija (npr. Open MPI ili MPICH — naredbe `mpicc`, `mpirun`)
+- za Dio IV: NVIDIA CUDA Toolkit (`nvcc`) i odgovarajući GPU; primjeri se **ne mogu prevesti ni pokrenuti** bez njih
 
 ## Prevođenje i pokretanje
 
-```sh
-make all              # prevede sve primjere
-make <ime_primjera>   # prevede pojedinačni primjer, npr. make mutex
-make clean            # briše izvršne i objektne datoteke
-```
-
-Pokretanje pojedinačnog primjera:
+Svaki direktorij sadrži vlastiti `Makefile` s istim konvencijama (varijable `CC`, `CFLAGS`, `LDFLAGS`, `TARGETS`; implicitno pravilo `.c.o`; pseudo-pravila `default`, `all`, `clean`). Pozicionirajte se u željeni direktorij i pokrenite:
 
 ```sh
-./pozdrav_nit
-./utrka               # pokrenite više puta — rezultat varira i < 4000000
-./mutex               # uvijek točno 4000000
+make all       # prevede sve primjere iz direktorija
+make clean     # briše generirane izvršne i objektne datoteke
 ```
 
-> **Napomena o `utrka.c`:** to je namjerno neispravan program koji ilustrira problem. Točan rezultat daju `mutex.c` i `suma_niti.c`.
+Za prevođenje pojedinačnog primjera dovoljno je `make <ime_primjera>`. Konkretne upute za pokretanje (očekivani argumenti i izlaz) nalaze se u README datoteci svakog poglavlja.
+
+## Licenca
+
+Kod je objavljen pod licencom **GNU General Public License v3.0**. Detalji su u datoteci [`LICENSE`](LICENSE).
