@@ -296,6 +296,88 @@ g = a + d
 {\large\bfseries\color{fesbPlava}Moderni procesori kombiniraju sva tri!}
 \end{center}
 
+# Memorijske arhitekture
+
+## Dijeljena memorija
+
+- Procesori izvršavaju nezavisne sljedove operacija, ali **dijele isti adresni prostor**
+- *Bus-based*: svi procesori dijele istu sabirnicu
+
+:::::: columns
+::: {.column width="52%"}
+![Izvor: Wikipedia](slike/smp_diag.png){width=100%}
+:::
+::: {.column width="46%"}
+\small
+
+**Prednosti:**
+
+- jednostavnija izrada (ili prilagodba) algoritma paralelnom izvršavanju
+- jednostavniji pristup memoriji
+- nema razmjene podataka među procesima
+:::
+::::::
+
+## NUMA
+
+- *Non-Uniform Memory Access* --- dijeljena memorija, svi procesori vide cijeli adresni prostor
+- Brzina pristupa ovisi o **lokaciji** memorije u odnosu na procesor
+- Složeno i skupo za implementaciju
+- **ccNUMA** (cache-coherent) --- osnova većine modernih višeprocesorskih sustava
+
+![](slike/l2s33_1.jpg){height=34%}
+
+## Dijeljena memorija --- izazovi
+
+- Programer mora **sinkronizirati** pristup memoriji
+- **Zagušenje:** više procesora dijeli istu sabirnicu
+- **Lažno dijeljenje:** sukob pri istovremenom pristupu istom bloku
+- **Cache:**
+    - procesori koriste lokalnu kopiju podataka u brzoj memoriji (predmemoriji)
+    - problem koherentnosti: svaka promjena u cacheu mora se odraziti na sve kopije istog bloka, inače procesori rade s nekoherentnim podacima
+
+## Symmetric Multiprocessing (SMP)
+
+- Dva ili više **identičnih** procesora spojenih na zajedničku glavnu memoriju
+- Nema procesora posebne namjene; dijele sve U/I uređaje i zajednički OS
+- Većina višejezgrenih računala temelji se na SMP arhitekturi
+
+:::::: columns
+::: {.column width="52%"}
+![Izvor: Wikipedia](slike/l2s35_1.png){width=100%}
+:::
+::: {.column width="46%"}
+\small
+
+- istovremeno izvršavanje **više programa**
+- na SMP sustavima poboljšanje performansi **čak i za programe (algoritme) dizajnirane za jednoprocesorske sustave**
+:::
+::::::
+
+## PRAM
+
+- *Parallel Random Access Machine* --- apstrakcija računala s dijeljenom memorijom
+- Koristi se za **modeliranje** paralelnih algoritama i procjenu složenosti
+- Modeli pristupa (read/write):
+    - **EREW** --- exclusive read, exclusive write
+        - svakoj memorijskoj lokaciji u jednom trenutku pristupa samo **jedan** procesor
+    - **CREW** --- concurrent read, exclusive write
+        - više procesora može istovremeno **čitati** s jedne lokacije, ali samo jedan **pisati**
+    - **CRCW** --- concurrent read, concurrent write
+        - više procesora može istovremeno čitati ili mijenjati istu lokaciju
+
+## Distribuirana memorija
+
+- Svaki procesor (proces) ima **vlastiti** memorijski prostor
+- Dijeljenje podataka **razmjenom poruka**
+- Brz pristup **lokalnim** podacima
+- **Složena arhitektura i zahtjevan razvoj koda:**
+    - podatke i podatkovne strukture potrebno je prilagoditi modelu
+    - zahtjevniji razvoj algoritma (i programiranje)
+    - spor pristup podacima koji nisu u lokalnoj memoriji
+    - procesi koji razmjenjuju poruke (oba) zaustavljaju računanje
+    - zahtjevno za programiranje
+
 # Cache memorija
 
 ## Cache --- memory latency
@@ -368,101 +450,112 @@ for (j = 0; j < N; j++)
 - Koherentnost radi na razini **cijelog linea**: svaki upis poništava line kod druge jezgre (**ping-pong**) → velik pad brzine iako logički nema dijeljenja
 - Rješenje: **padding** / poravnanje --- svaka varijabla u svom cache lineu
 
-# Memorijske arhitekture
-
-## Dijeljena memorija
-
-- Procesori izvršavaju nezavisne sljedove operacija, ali **dijele isti adresni prostor**
-- *Bus-based*: svi procesori dijele istu sabirnicu
-
-![Izvor: Wikipedia](slike/smp_diag.png){height=48%}
-
-## NUMA
-
-- *Non-Uniform Memory Access* --- dijeljena memorija, svi procesori vide cijeli adresni prostor
-- Brzina pristupa ovisi o **lokaciji** memorije u odnosu na procesor
-- Složeno i skupo za implementaciju
-- **ccNUMA** (cache-coherent) --- osnova većine modernih višeprocesorskih sustava
-
-![](slike/l2s33_1.jpg){height=34%}
-
-## Dijeljena memorija --- izazovi
-
-- Programer mora **sinkronizirati** pristup memoriji
-- **Zagušenje:** više procesora dijeli istu sabirnicu
-- **Lažno dijeljenje:** sukob pri istovremenom pristupu istom bloku
-- **Koherentnost cachea:** svaka promjena bloka mora se odraziti na sve kopije, inače procesori rade s nekoherentnim podacima
-
-## Symmetric Multiprocessing (SMP)
-
-- Dva ili više **identičnih** procesora spojenih na zajedničku glavnu memoriju
-- Nema procesora posebne namjene; dijele sve U/I uređaje
-- Zajednički operativni sustav
-- Većina višejezgrenih računala temelji se na SMP arhitekturi
-
-![Izvor: Wikipedia](slike/l2s35_1.png){height=36%}
-
-## PRAM
-
-- *Parallel Random Access Machine* --- apstrakcija računala s dijeljenom memorijom
-- Koristi se za **modeliranje** paralelnih algoritama i procjenu složenosti
-- Modeli pristupa:
-    - **EREW** --- exclusive read, exclusive write
-    - **CREW** --- concurrent read, exclusive write
-    - **CRCW** --- concurrent read, concurrent write
-
-## Distribuirana memorija
-
-- Svaki procesor (proces) ima **vlastiti** memorijski prostor
-- Dijeljenje podataka **razmjenom poruka**
-- Brz pristup lokalnim podacima, spor pristup udaljenima
-- Zahtjevniji razvoj: podatke i strukture treba prilagoditi modelu
-- Pri razmjeni poruka oba procesa (privremeno) zaustavljaju računanje
-
 # Mrežne arhitekture
 
 ## Mrežne arhitekture
 
-- **Potpuno povezane mreže:** svaki čvor povezan sa svima
-    - složeno i skupo; složenost komunikacije O(1)
-- **Ograničeno povezane mreže:** nema direktne veze svakog sa svakim
+- **Potpuno povezane mreže** (*completely connected*):
+    - svaki čvor povezan je sa svim ostalima
+    - složena i skupa arhitektura
+    - broj veza N·(N−1)/2, složenost mreže O(N²)
+    - vremenska složenost komunikacije: **O(1)**
+- **Ograničeno povezane mreže** (*limited connection*):
+    - nema direktne veze svakog čvora sa svakim
     - komunikacija se preusmjerava kroz druge čvorove
-    - **linearni niz:** složenost mreže O(N), komunikacije O(N)
+    - **promjer mreže:** najmanji broj koraka da procesor pošalje poruku najudaljenijem procesoru
+    - **linearni niz** (*linear array*): složenost mreže O(N), komunikacije O(N)
 
 ## Hypercube
 
-- N-dimenzionalna analogija kvadrata; procesori u vrhovima
+- **Hypercube:** N-dimenzionalna analogija kvadrata; procesori u vrhovima hiperkocke
+    - 4 procesora (2-cube): u 4 vrha kvadrata
+    - 8 procesora (3-cube): u 8 vrhova kocke
 - U sustavu s $2^N$ procesora svaki je povezan s **N** susjeda
-- **Promjer mreže:** najmanji broj koraka do najudaljenijeg procesora → N
-- Broj procesora uvijek je potencija broja 2
+- **Promjer mreže** --- najmanji broj koraka do najudaljenijeg procesora:
+    - 4 procesora: promjer 2; 8 procesora: promjer 3; N-cube: promjer **N**
+- Broj procesora uvijek je **potencija broja 2**
 
-![Izvor: Wikipedia](slike/hypercube.png){height=44%}
+## Hypercube --- 4-cube
+
+:::::: columns
+::: {.column width="50%"}
+- **4-cube:** 16 procesora ($2^4$)
+- svaki procesor povezan je sa **4** susjeda
+- promjer mreže: **4**
+:::
+::: {.column width="48%"}
+![Izvor: Wikipedia](slike/l2s41_1.png){height=64%}
+:::
+::::::
 
 ## Mesh (rešetka)
 
-- *Mesh Interconnection Network* --- procesori u 2D rešetki
-- Svaki procesor povezan sa **4** neposredna susjeda
-- Broj procesora ne mora biti potencija broja 2
-- Rubovi se mogu spojiti → **torus**
+:::::: columns
+::: {.column width="42%"}
+\small
 
-![](slike/l2s41_1.png){height=40%}
+- *Mesh Interconnection Network* --- procesori u 2D rešetki
+- svaki procesor povezan sa **4** neposredna susjeda
+- broj procesora ne mora biti potencija broja 2
+- postoje i **N-dimenzionalne** mesh arhitekture
+- promjer mreže veći nego kod hypercubea
+:::
+::: {.column width="56%"}
+\begin{center}
+\includegraphics[width=0.48\linewidth]{slike/mesh_net.jpg}\hspace{0.4em}\includegraphics[width=0.48\linewidth]{slike/l2s42_1.jpg}
+
+{\scriptsize\itshape\color{fesbSiva}Izvor: Wikipedia / yuvayana.org}
+\end{center}
+:::
+::::::
 
 ## Torus
 
-- Nastaje spajanjem rubova rešetke u zatvorenu petlju
+:::::: columns
+::: {.column width="52%"}
+\small
+
+- nastaje spajanjem rubova rešetke u zatvorenu petlju
+- alternativno: nastaje **okretanjem kruga oko osi koplanarne kružnici**
 - **1D torus (ring):** svaki čvor povezan s 2 susjeda
 - **2D torus:** rešetka $n \times n$
 - **3D torus:** svaki čvor povezan sa 6 susjeda
 - **N-D torus:** svaki čvor povezan s 2N susjeda
+:::
+::: {.column width="46%"}
+![](slike/l2s43_1.png){width=100%}
+:::
+::::::
 
-![](slike/l2s43_1.png){height=34%}
+## Torus
 
-## Torus --- prednosti i nedostaci
-
-- **Prednosti:** veća brzina i manja latencija, bolja balansiranost, manja potrošnja energije
-- **Nedostaci:** složenost, neujednačena dužina linkova, cijena
+- **Prednosti:**
+    - veća brzina, manja latencija
+    - bolja balansiranost
+    - manja potrošnja energije
+- **Nedostaci:**
+    - složenost
+    - neujednačena dužina mrežnih linkova
+    - cijena
 - Primjer: Fujitsu **6D torus** --- 12× veća skalabilnost od 3D torusa
     - superračunalo **Fugaku** (~0,5 exaFLOPS, vrh TOP500 2020.--2022.)
+
+## Fat tree
+
+:::::: columns
+::: {.column width="50%"}
+\small
+
+- stablasta topologija u kojoj veze prema **korijenu** postaju sve „deblje" (veći kapacitet)
+- rješava usko grlo klasičnog stabla (korijen bi inače bio zagušen)
+- ujednačena propusnost između bilo koja dva čvora (*full bisection bandwidth*)
+- promjer **O(log N)**; dobra skalabilnost
+- široko korištena u **HPC klasterima** i podatkovnim centrima (npr. InfiniBand)
+:::
+::: {.column width="48%"}
+![Izvor: Wikipedia](slike/fat_tree.png){width=100%}
+:::
+::::::
 
 # Sažetak
 
