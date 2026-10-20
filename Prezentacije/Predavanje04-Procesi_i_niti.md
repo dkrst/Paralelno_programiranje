@@ -30,7 +30,7 @@ lang: hr
     - signali i maske signala…
 :::
 ::: {.column width="44%"}
-![Izvor: materijali kolegija](slike/l4s05_1.png){width=92%}
+![](slike/l4s05_1.png){width=92%}
 :::
 ::::::
 
@@ -86,7 +86,7 @@ Procesi međusobno \textbf{ne mogu} dijeliti informacije putem zajedničkih vari
 
 ## Procesi vs. niti
 
-![Izvor: materijali kolegija](slike/l4s11_1.png){height=62%}
+![](slike/l4s11_1.png){height=62%}
 
 \begin{center}
 \small Svaka nit ima svoj stog, ostalo dijele!
@@ -95,23 +95,24 @@ Procesi međusobno \textbf{ne mogu} dijeliti informacije putem zajedničkih vari
 ## Funkcijski pozivi i stog
 
 - kod svakog poziva funkcije kreira se **novi okvir** na stogu → zato svaka nit mora imati **svoj** stog!
-- svaki okvir sadrži:
-    - gdje se vratiti nakon izvršenja (povratna adresa)
-    - rezultat funkcije
-    - parametri
+- svaki okvir sadrži: povratnu adresu, rezultat funkcije, parametre, lokalne varijable
 
-## Funkcijski pozivi i stog --- zašto za niti?
+![](slike/l4s12_1.png){width=78%}
+
+## Funkcijski pozivi i stog
 
 - svaka nit izvršava **svoj tok** programa → poziva svoje funkcije
 - svaka nit treba **svoj stog** → da zna gdje se vratiti i koje su joj lokalne varijable
 - **lokalne** varijable su **privatne** za svaku nit (na njenom stogu)
 - **globalne** varijable su **zajedničke** (nisu na stogu!)
 
+![](slike/l4s12_1.png){width=72%}
+
 ## Višenitni pristup dijeljenoj memoriji
 
 :::::: columns
 ::: {.column width="52%"}
-![Izvor: materijali kolegija](slike/l4s14_1.png){width=100%}
+![](slike/l4s14_1.png){width=100%}
 :::
 ::: {.column width="46%"}
 \small
@@ -164,7 +165,7 @@ void* worker(void* arg) {
 - **Rutina koja NIJE thread-safe:**
     - nema zaštitu zajedničkih podataka
     - nepredvidljivi rezultati, moguće rušenje
-- **Preporuka:** niste li 100 % sigurni da je biblioteka thread-safe → pretpostavite da **nije**; serijalizirajte pozive
+- **Preporuka:** ako niste 100 % sigurni da je biblioteka thread-safe → pretpostavite da **nije**; serijalizirajte pozive, ili implementirajte eksplicitni mehanizam sinkronizacije
 
 ## Race condition
 
@@ -174,7 +175,7 @@ void* worker(void* arg) {
 
 ## Je li `count++` atomska operacija?
 
-**NIJE!** U asembleru su to **tri** koraka:
+**Strojni kod (assembler):**
 
 ```asm
 mov eax, [count]   ; 1. učitaj iz memorije u registar
@@ -186,11 +187,11 @@ mov [count], eax   ; 3. spremi natrag u memoriju
 - očekivanje: 2 niti × 10000 = **20000**
 - stvarnost: 15234, 18921, 19654… **različito svaki put!**
 
-## Race condition --- scenarij 1 (sretan slučaj)
+## Race condition --- scenarij 1
 
 Nema preklapanja --- `count = 5` na početku:
 
-```text
+```asm
 Thread 1                 Thread 2
 mov eax,[count]  (5)
 inc eax          (6)
@@ -200,11 +201,11 @@ mov [count],eax  (6)
                          mov [count],eax  (7)
 ```
 
-- Thread 2 počinje **nakon** što je Thread 1 završio → **count = 7** ✓
+- Thread 2 počinje **nakon** što je Thread 1 završio → **count = 7**
 
-## Race condition --- scenarij 2 (djelomično preklapanje)
+## Race condition --- scenarij 2
 
-```text
+```asm
 Thread 1                 Thread 2
 mov eax,[count]  (5)
 inc eax          (6)
@@ -216,19 +217,44 @@ mov [count],eax  (6)
 
 - Thread 2 pročitao `count` **prije** nego ga je Thread 1 spremio → **count = 6** (umjesto 7)
 
-## Race condition --- scenarij 3 (najgori slučaj)
+## Race condition --- tri niti
 
-```text
-Thread 1                 Thread 2
-mov eax,[count]  (5)
-                         mov eax,[count]  (5)
-inc eax          (6)
-                         inc eax          (6)
-mov [count],eax  (6)
-                         mov [count],eax  (6)
+Tri niti rade `count++`, početno `count = 5`, očekivano **8**.
+
+```asm
+Thread 1            Thread 2            Thread 3
+mov eax,[count]
+                    mov eax,[count]
+                                        mov eax,[count]
+inc eax
+                    inc eax
+                                        inc eax
+mov [count],eax
+                    mov [count],eax
+                                        mov [count],eax
 ```
 
-- obje niti pročitale istu vrijednost, uvećale je i spremile istu → **count = 6** ✗
+- sve tri pročitale istu vrijednost → **count = 6** (umjesto 8!)
+
+## Race condition --- tri niti
+
+Drugo preplitanje istih triju niti (`count = 5`, očekivano **8**):
+
+```asm
+Thread 1            Thread 2            Thread 3
+mov eax,[count]
+                    mov eax,[count]
+inc eax
+                    inc eax
+mov [count],eax
+                    mov [count],eax
+                                        mov eax,[count]
+                                        inc eax
+                                        mov [count],eax
+```
+
+- T1 i T2 se preklope (izgube jedan `++`), T3 radi poslije → **count = 7** (umjesto 8!)
+- različita preplitanja → **različiti pogrešni rezultati**, nepredvidljivo
 
 ## Race condition --- zaključak
 
@@ -259,8 +285,37 @@ int x = y;      // atomska (na većini arhitektura): jedan upis
 count++;        // NIJE atomska: učitaj → uvećaj → spremi
 ```
 
-- problem: `count++` **nije** atomska
-- rješenje: potrebna je **sinkronizacija** → **mutex** (*mutual exclusion*)
+- problem: `count++` nad običnim `int` **nije** atomska → dva rješenja:
+
+:::::: columns
+::: {.column width="50%"}
+\small
+
+**Atomski tip** (C11 `<stdatomic.h>`):
+
+```c
+atomic_int count = 0;
+count++;   // sada ATOMSKI
+```
+
+- kompajler generira atomsku instrukciju (npr. `lock xadd`)
+- brzo; za **jednu** varijablu/operaciju
+:::
+::: {.column width="48%"}
+\small
+
+**Mutex** (*mutual exclusion*):
+
+```c
+pthread_mutex_lock(&m);
+count++;
+pthread_mutex_unlock(&m);
+```
+
+- štiti **blok koda** (više naredbi)
+- općenitije, ali sporije
+:::
+::::::
 
 ## Mutex --- uzajamno isključivanje
 
@@ -286,7 +341,7 @@ count++;        // NIJE atomska: učitaj → uvećaj → spremi
 - **samo jedna nit** odjednom smije biti u kritičnoj sekciji
 :::
 ::: {.column width="48%"}
-![Izvor: materijali kolegija](slike/l4s31_1.png){width=100%}
+![](slike/l4s31_1.png){width=100%}
 :::
 ::::::
 
@@ -312,14 +367,11 @@ void* thread_function(void* arg) {
 
 ## Deadlock (potpuni zastoj)
 
-```text
-Thread A zaključa lock_a        Thread B zaključa lock_b
-Thread A čeka  lock_b    ←→     Thread B čeka  lock_a
-```
+![](slike/l4s33_1.png){height=58%}
 
 \begin{center}
-\setlength{\fboxsep}{8pt}
-\colorbox{fesbNaglasak!15}{\parbox{0.6\linewidth}{\centering \textbf{DEADLOCK!} --- obje niti čekaju jedna drugu, zauvijek}}
+\setlength{\fboxsep}{7pt}
+\colorbox{fesbNaglasak!15}{\parbox{0.72\linewidth}{\centering \textbf{DEADLOCK!} --- obje niti čekaju jedna drugu, zauvijek}}
 \end{center}
 
 ## Primjer --- deadlock
@@ -399,7 +451,7 @@ Najčešće paradigme paralelnog programiranja:
 - radnici rade različitim brzinama; po završetku preuzimaju novi zadatak
 :::
 ::: {.column width="48%"}
-![Izvor: materijali kolegija](slike/master_slave.png){width=100%}
+![](slike/master_slave.png){width=100%}
 :::
 ::::::
 
@@ -466,7 +518,7 @@ void* worker(void* arg) {
 
 ## Pipeline --- tok podataka
 
-![Izvor: materijali kolegija](slike/pipeline_l4.png){width=94%}
+![](slike/pipeline_l4.png){width=94%}
 
 ```text
 T1: Stage1[A]
@@ -510,7 +562,7 @@ T4: Stage1[D]  Stage2[C]  Stage3[B]   ← svi stage-ovi aktivni
 - **asinhrona** komunikacija
 :::
 ::: {.column width="48%"}
-![Izvor: materijali kolegija](slike/l4s52_1.png){width=100%}
+![](slike/l4s52_1.png){width=100%}
 :::
 ::::::
 
