@@ -81,6 +81,49 @@ lang: hr
     - dva pokazivača s istom vrijednošću pokazuju na iste podatke
     - čitanje/pisanje na istu lokaciju → **zahtijeva eksplicitnu sinkronizaciju!**
 
+## Registri: procesor i proces/nit
+
+- **CPU registri** --- stvarni hardverski registri; postoji **samo jedan skup** po jezgri
+    - u svakom trenutku drže stanje niti koja se izvršava (PC, stack pointer, međurezultati)
+- **„Registri" procesa/niti** --- **spremljena kopija** tog stanja u memoriji (TCB/PCB)
+    - OS ih spremi/vrati pri prebacivanju → svaka nit pamti dokle je stigla
+
+\begin{center}
+\setlength{\fboxsep}{7pt}
+\colorbox{fesbSvijetla!15}{\parbox{0.88\linewidth}{\centering Spremljeni registri \textbf{odgovaraju} procesorskima po broju i namjeni --- pa su \textbf{ovisni o arhitekturi}}}
+\end{center}
+
+- x86-64: `rax…rsp`, `rip`, `rflags`, SSE/AVX · ARM64: `x0–x30`, `sp`, `pc`, NEON · RISC-V: `x0–x31`
+- isti **izvorni** program na dvije arhitekture → različit strojni kod i registri, isto logičko ponašanje (prenosivost daje jezik/standard, ne registri)
+
+## Context switching --- što se prebacuje?
+
+:::::: columns
+::: {.column width="50%"}
+\small
+
+**Niti (isti proces):**
+
+- CPU registri + PC
+- stack pointer (vlastiti stog)
+- adresni prostor se **ne mijenja** (dijele ga)
+:::
+::: {.column width="48%"}
+\small
+
+**Procesi (dodatno):**
+
+- adresni prostor (`CR3` / tablica stranica)
+- **TLB flush**, cache „ohladi"
+- file deskriptori, signali
+:::
+::::::
+
+\begin{center}
+\setlength{\fboxsep}{7pt}
+\colorbox{fesbSvijetla!15}{\parbox{0.9\linewidth}{\centering Prebacivanje niti \textbf{ne dira memorijski podsustav} (TLB/cache ostaju valjani) → bitno \textbf{jeftinije} od prebacivanja procesa}}
+\end{center}
+
 ## Zašto su niti brže od procesa?
 
 - **kreiranje** --- manje overhead-a, ne kopira se cijeli adresni prostor
@@ -120,7 +163,7 @@ Ostali (naprednije, spominjemo usput):
 
 - **`pthread_attr_t`** --- atributi niti
 
-## `pthread_create()` --- prototip
+## `pthread_create()`
 
 ```c
 int pthread_create(
@@ -133,7 +176,7 @@ int pthread_create(
 
 - **povratna vrijednost:** `0` (uspjeh), `EAGAIN` (nema resursa), `EINVAL` (loši atributi)
 
-## `pthread_create()` --- što radi
+## `pthread_create()`
 
 - kreira novu nit unutar procesa
 - nova nit izvršava `start_routine(arg)`
@@ -142,7 +185,7 @@ int pthread_create(
 
 \begin{center}
 \setlength{\fboxsep}{8pt}
-\colorbox{fesbNaglasak!15}{\parbox{0.86\linewidth}{\centering Ako \texttt{main()} vrati → \textbf{sve niti se terminiraju!} \\ Rješenje: na kraju \texttt{main()} pozvati \texttt{pthread\_exit(NULL)}}}
+\colorbox{fesbSvijetla!15}{\parbox{0.88\linewidth}{\centering Nova nit je \textbf{ravnopravna} s postojećim nitima --- uključujući nit u kojoj se izvršava \texttt{main()}. \\ \textbf{Nema „glavne" niti}: sve niti dijele isti status.}}
 \end{center}
 
 ## Anatomija thread funkcije
@@ -205,17 +248,17 @@ int main() {
 ## Primjer 3 --- slanje strukture
 
 ```c
-typedef struct { int id; char ime[32]; double plata; } Radnik;
+typedef struct { int id; char ime[32]; double ocjena; } Student;
 
 void* obradi(void* arg) {
-    Radnik* r = (Radnik*)arg;
-    printf("%d: %s, %.2f\n", r->id, r->ime, r->plata);
+    Student* r = (Student*)arg;
+    printf("%d: %s, %.2f\n", r->id, r->ime, r->ocjena);
     return NULL;
 }
 
 int main() {
     pthread_t tid;
-    Radnik r = {1, "Ana", 1234.5};
+    Student r = {1, "Ana", 4.5};
     pthread_create(&tid, NULL, obradi, &r);
     pthread_join(tid, NULL);
     return 0;
@@ -227,6 +270,12 @@ int main() {
 ## Česta greška --- pokazivač na lokalnu varijablu
 
 ```c
+void* worker(void* arg) {
+    int value = *(int*)arg;
+    printf("Thread %d\n", value);
+    return NULL;
+}
+...
 for (int i = 0; i < 5; i++) {
     // SVE niti dobivaju ISTU adresu &i — čitaju i kad se već promijenio!
     pthread_create(&tid[i], NULL, worker, &i);
@@ -268,13 +317,56 @@ for (int i = 0; i < 5; i++) {
 
 ## Kada koje rješenje?
 
-| | **Polje (array)** | **malloc** |
+| | **Polje (array)** | **malloc (po niti)** |
 |:--|:--|:--|
 | broj niti | **poznat** unaprijed | dinamičan / nepoznat |
-| oslobađanje | automatsko (po kraju) | ručno `free()` |
-| jednostavnost | jednostavnije | fleksibilnije |
+| alokacija | --- (na stogu) | N poziva |
+| oslobađanje | automatsko (po kraju) | N × ručno `free()` |
+| kada | fiksan, mali N | niti žive različito dugo |
 
-# Čekanje i povratne vrijednosti
+## Ispravno --- rješenje 3 (dinamičko polje)
+
+```c
+int* args = malloc(N * sizeof(int));   // JEDAN malloc za cijelo polje
+for (int i = 0; i < N; i++) {
+    args[i] = i;                       // svaka nit svoj slot
+    pthread_create(&tid[i], NULL, worker, &args[i]);
+}
+...
+for (int i = 0; i < N; i++) pthread_join(tid[i], NULL);
+free(args);                            // JEDAN free na kraju
+```
+
+- kompromis: dinamično (`N` nije poznat u prevođenju), ali **jedna** alokacija i **jedan** `free`
+
+# Izlazak iz niti i povratna vrijednost
+
+## `pthread_exit()` --- završetak niti
+
+```c
+void pthread_exit(void *retval);
+```
+
+- **završava** nit koja ga poziva (može se pozvati **bilo gdje** u niti)
+- vrijednost `retval` postaje dostupna preko `pthread_join` (u `*retval`)
+- ostale niti nastavljaju raditi
+
+## Završetak niti --- `return` iz funkcije
+
+- `return ptr;` iz funkcije s kojom je nit započela ima **isti efekt** kao `pthread_exit(ptr)`:
+    - nit završava, a `ptr` postaje njezina povratna vrijednost
+
+```c
+void* worker(void* arg) {
+    ...
+    return rezultat;          // ≡ pthread_exit(rezultat);
+}
+```
+
+\begin{center}
+\setlength{\fboxsep}{7pt}
+\colorbox{fesbNaglasak!15}{\parbox{0.9\linewidth}{\centering \textbf{Oprez:} \texttt{return} iz \texttt{main()} prekida \textbf{cijeli proces} --- sve niti! \\ Da ostale niti nastave, u \texttt{main()} pozvati \texttt{pthread\_exit(NULL)} umjesto \texttt{return}.}}
+\end{center}
 
 ## `pthread_join()` --- prototip
 
@@ -287,7 +379,7 @@ int pthread_join(
 
 - što radi:
     - **blokira** pozivajuću nit dok ciljna nit ne završi
-    - **sprema** povratnu vrijednost niti u `*retval`
+    - **sprema** povratnu vrijednost niti (tipa `void*`, tj. adresu rezultata) u `*retval`
     - **oslobađa** resurse niti
 
 ## Primjer 1 --- jednostavno čekanje
@@ -314,15 +406,16 @@ int main() {
 
 ```c
 void* calculate_sum(void* arg) {
+    int n = *(int*)arg;                  // vrijednost iz argumenta
     int* result = malloc(sizeof(int));   // MORA malloc!
     *result = 0;
-    for (int i = 1; i <= 100; i++) *result += i;
+    for (int i = 1; i <= n; i++) *result += i;
     return (void*)result;                // vraćamo pokazivač
 }
 
 int main() {
-    pthread_t tid;  int* sum;
-    pthread_create(&tid, NULL, calculate_sum, NULL);
+    pthread_t tid;  int* sum;  int n = 100;
+    pthread_create(&tid, NULL, calculate_sum, &n);
     pthread_join(tid, (void**)&sum);     // primamo pokazivač
     printf("Sum: %d\n", *sum);
     free(sum);                           // ne zaboraviti!
@@ -335,13 +428,13 @@ int main() {
 ```c
 void* bad_function(void* arg) {
     int result = 42;          // lokalna varijabla na stogu!
-    return (void*)&result;    // stog niti se uništava nakon returna
+    return (void*)&result;    // stog niti se briše nakon returna
 }
 ```
 
 \begin{center}
 \setlength{\fboxsep}{8pt}
-\colorbox{fesbNaglasak!15}{\parbox{0.82\linewidth}{\centering Stog niti se uništava nakon završetka! \\ Rezultat mora biti na \textbf{heapu} (\texttt{malloc}) ili u dijeljenoj varijabli.}}
+\colorbox{fesbNaglasak!15}{\parbox{0.82\linewidth}{\centering Stog niti se briše nakon završetka! \\ Rezultat mora biti na \textbf{heapu} (\texttt{malloc}) ili u dijeljenoj varijabli.}}
 \end{center}
 
 \footnotesize Primjeri u repou: `P05-POSIX_niti/rezultat_malloc.c`, `suma_niti.c`
@@ -349,6 +442,8 @@ void* bad_function(void* arg) {
 # Sinkronizacija --- mutex
 
 ## Zašto trebamo mutex? (podsjetnik)
+
+Dvije niti izvršavaju `count++` (početno `count = 5`):
 
 ```asm
 Thread 1              Thread 2
@@ -370,7 +465,7 @@ mov [count],eax (6)
 ```c
 #include <pthread.h>
 
-// Način 1: statička inicijalizacija (preferiran)
+// Način 1: statička inicijalizacija
 pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
 
 // Način 2: dinamička inicijalizacija
